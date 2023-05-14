@@ -18,12 +18,55 @@ contract DummyERC20 is ERC20 {
 
 }
 
+contract Maker {
+
+    string name; 
+
+    constructor(string memory _name) {
+        name = _name;
+    }
+
+    function deposit(address vault, uint amount, uint epochs) external returns (bytes32) {
+        ERC20(DcaVault(vault).makeAsset()).approve(vault, type(uint).max);
+        return DcaVault(vault).deposit(amount, epochs);
+    }
+
+    function withdraw(address vault, bytes32 positionId) external {
+        DcaVault(vault).withdraw(positionId);
+    }
+
+    function closePosition(address vault, bytes32 positionId) external {
+        DcaVault(vault).closePosition(positionId);
+    }
+
+}
+
+contract Taker {
+
+    string name;
+
+    constructor(string memory _name) {
+        name = _name;
+    }
+
+    function swap(address vault, uint256 amount) external {
+        ERC20(DcaVault(vault).takeAsset()).transfer(vault, amount);
+        DcaVault(vault).swapPush();
+    }
+
+}
+
 contract DummyGmxPriceFeed is PriceFeed {
 
+    uint256 price = 1795854000000000000000000000000000;
     bool isActive = true;
 
     function setIsActive(bool _isActive) external {
         isActive = _isActive;
+    }
+
+    function setPrice(uint256 _price) external {
+        price = _price;
     }
 
     function active() override external view returns (bool) {
@@ -35,7 +78,7 @@ contract DummyGmxPriceFeed is PriceFeed {
     }
 
     function getLatestPrice(address quote, address base) override external view returns (uint256) {
-        return 1795854000000000000000000000000000;
+        return price;
     }
 
 }
@@ -119,9 +162,6 @@ contract DcaVaultTest is Test {
         // Warp to the next epoch
         cheats.warp(epochDuration+1);
 
-        // todo: don't allow trading when the price feed is not active
-        // todo: make sure taker can't trade more than it is in the pool
-
         // Query & Swap
         uint256 swapAmount = 2 ether;
         uint256 expectedAmountOut = 2*1795854000;
@@ -158,8 +198,68 @@ contract DcaVaultTest is Test {
         assertEq(vault.getPositionForId(positionId).owner, address(0), "position is empty after closing");
     }
 
-    // test gas cost withdrawing from many epochs
+    function testScenario() public {
+        // 🪄 Init
+        address makeAsset = dUSDC;
+        address takeAsset = dETH;
+        uint epochDuration = 1 days;
+        DummyGmxPriceFeed priceFeed = new DummyGmxPriceFeed();
+        priceFeed.setPrice(25e30);
+        DcaVault vault = new DcaVault(
+            makeAsset,
+            takeAsset,
+            epochDuration,
+            address(priceFeed)
+        );
 
-    // test case1 (see the ipad sketch)
+        // 🙋‍♂️ Define users
+        Maker alice = new Maker("Alice");
+        Maker bob = new Maker("Bob");
+        Maker tom = new Maker("Tom");
+        Taker taker = new Taker("Taker");
+
+        // 🖨️ Mint tokens to users
+        DummyERC20(makeAsset).mint(address(alice), 100e6);
+        DummyERC20(makeAsset).mint(address(bob), 100e6);
+        DummyERC20(makeAsset).mint(address(tom), 100e6);
+        DummyERC20(takeAsset).mint(address(taker), 14 ether);
+        
+        // 💰 Alice & Bob both deposit 4000 dUSDC 2 epochs
+        uint256 depositAmount = 100e6;
+        bytes32 alicePositionId = alice.deposit(address(vault), depositAmount, 2);
+        bytes32 bobPositionId = bob.deposit(address(vault), depositAmount, 2);
+
+        // ⏱️ Warp to the next epoch
+        cheats.warp(block.timestamp + epochDuration + 1);
+
+        // 💱 Taker swaps
+        taker.swap(address(vault), 4 ether);
+
+        // 💰 Tom deposits 4000 dUSDC 1 epoch
+        bytes32 tomPositionId = tom.deposit(address(vault), depositAmount, 1);
+
+        // ⏱️ Warp to the next epoch
+        cheats.warp(block.timestamp + epochDuration+1);
+
+        // Change the price
+        priceFeed.setPrice(20e30);
+
+        // 💱 Taker swaps 10 ether
+        taker.swap(address(vault), 10 ether);
+
+        // 🚪 All markers withdraw (and close their positions)
+        alice.withdraw(address(vault), alicePositionId);
+        bob.withdraw(address(vault), bobPositionId);
+        tom.withdraw(address(vault), tomPositionId);
+
+        // ✅ Check balances are distributed correctly
+        uint256 takeBalAlice = ERC20(takeAsset).balanceOf(address(alice));
+        uint256 takeBalBob = ERC20(takeAsset).balanceOf(address(bob));
+        uint256 takeBalTom = ERC20(takeAsset).balanceOf(address(tom));
+        assertEq(takeBalAlice, 4.5 ether, "Alice should have 100e6");
+        assertEq(takeBalBob, 4.5 ether, "Bob should have 100e6");
+        assertEq(takeBalTom, 5 ether, "Tom should have 100e6");
+
+    }
 
 }
