@@ -155,7 +155,7 @@ contract DcaVault is IDcaVault {
     }
 
     function _swap(uint256 takeAmount) internal { // todo: use quote and base to avoid confusion
-        require(PriceFeed(priceFeed).active(), "Oracle not active");
+        require(PriceFeed(priceFeed).active(takeAsset, makeAsset), "Oracle not active");
         updateEpoch();
         uint256 makeAmount = _getMakeForTake(takeAmount);
         require(makeAmount <= makeUnlockedBalance, "Insufficient unlocked funds");

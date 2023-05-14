@@ -69,7 +69,7 @@ contract DummyGmxPriceFeed is PriceFeed {
         price = _price;
     }
 
-    function active() override external view returns (bool) {
+    function active(address, address) override external view returns (bool) {
         return isActive;
     }
 
