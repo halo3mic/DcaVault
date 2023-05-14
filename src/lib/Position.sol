@@ -36,7 +36,7 @@ library PositionUtils {
     function unlocked(Position memory position, uint256 currentEpoch) internal pure returns (uint256) {
         if (currentEpoch < position.epoch0)
             return 0;
-        uint256 activeEpochs = min(position.epochs, currentEpoch - position.epoch0);
+        uint256 activeEpochs = min(position.epochs, currentEpoch - position.epoch0 + 1);
         return activeEpochs * position.recurringAmount;
     }
 

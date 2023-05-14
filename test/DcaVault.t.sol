@@ -110,9 +110,11 @@ contract DcaVaultTest is Test {
         ERC20(makeAsset).approve(address(vault), type(uint).max);
         
         // Deposit
-        uint256 amount = 11 ether;
+        uint256 depositAmount = 100_000e6;
         uint256 epochs = 3;
-        bytes32 positionId = vault.deposit(amount, epochs);
+        bytes32 positionId = vault.deposit(depositAmount, epochs);
+
+        uint256 depositedAmount = vault.getPositionForId(positionId).recurringAmount*epochs;
 
         // Warp to the next epoch
         cheats.warp(epochDuration+1);
@@ -122,37 +124,41 @@ contract DcaVaultTest is Test {
 
         // Query & Swap
         uint256 swapAmount = 2 ether;
+        uint256 expectedAmountOut = 2*1795854000;
         uint256 queryAmountOut = vault.query(swapAmount);
-        console.log("queryAmountOut: %d", queryAmountOut);
+        assertEq(queryAmountOut, expectedAmountOut, "queryAmountOut must be 1795854000");
 
-        // ERC20(takeAsset).transfer(address(vault), swapAmount);
-        // uint256 takeAmount0 = ERC20(takeAsset).balanceOf(address(this));
-        // vault.swapPush();
-        // uint256 takeAmount1 = ERC20(takeAsset).balanceOf(address(this));
-        // uint256 swapAmountOut = takeAmount1-takeAmount0;
+        ERC20(takeAsset).transfer(address(vault), swapAmount);
+        uint256 makeAmountBal0 = ERC20(makeAsset).balanceOf(address(this));
+        vault.swapPush();
+        uint256 makeAmountBal1 = ERC20(makeAsset).balanceOf(address(this));
+        uint256 swapAmountOut = makeAmountBal1-makeAmountBal0;
 
-        // console.log("swapAmountOut: %d", swapAmountOut);
+        assertEq(swapAmountOut, queryAmountOut, "queryAmountOut must match swapAmountOut");
 
-        // assertEq(swappedMake, makeAmount, "swappedMake is correct");
-        // todo: check if swap matches query 
-        // todo: check if swap was at the oracle price
+        // Check
+        Position memory pos = vault.getPositionForId(positionId);
+        assertEq(ERC20(takeAsset).balanceOf(address(vault)), swapAmount, "take balance is increased");
+        assertEq(vault.makeUnlockedBalance(), pos.recurringAmount-swapAmountOut, "makeUnlockedBalance is decreased");
+        assertEq(vault.getInfoForEpoch(vault.currentEpoch()).takeInflow, swapAmount);
 
-        // // Check
-        // Position memory pos = vault.getPositionForId(positionId);
-        // assertEq(pos.recurringAmount, amount, "recurringAmount is correct");
-        // assertEq(pos.epochs, epochs, "epochs is correct");
-        // assertEq(pos.epoch0, vault.currentEpoch()+1, "epoch0 is the following epoch");
-        // assertEq(pos.withdrawn, 0, "withdrawn is correct");
-        // assertEq(vault.recurringPending(), amount, "recurringPending is correct");
-        // assertEq(vault.getPositionForId(positionId).owner, address(this), "position owner is correct");
+        // User can close the position
+        uint makeBal0 = ERC20(makeAsset).balanceOf(address(this));
+        uint takeBal0 = ERC20(takeAsset).balanceOf(address(this));
+        vault.closePosition(positionId);
+        uint makeBal1 = ERC20(makeAsset).balanceOf(address(this));
+        uint takeBal1 = ERC20(takeAsset).balanceOf(address(this));
 
-        // // User can immediatly close the position
-        // vault.closePosition(positionId);
-        // assertEq(vault.recurringPending(), 0, "recurringPending is reset after closing");
-        // assertEq(vault.getPositionForId(positionId).owner, address(0), "position is empty after closing");
+        uint makeDiff = makeBal1-makeBal0;
+        uint takeDiff = takeBal1-takeBal0;
+        assertEq(makeDiff, depositedAmount-swapAmountOut, "makeDiff eq whatever wasn't traded");
+        assertEq(takeDiff, swapAmount, "takeDiff eq whatever was traded");
+
+        assertEq(vault.recurringPending(), 0, "recurringPending is reset after closing");
+        assertEq(vault.getPositionForId(positionId).owner, address(0), "position is empty after closing");
     }
 
-    // test deposit, swap, withdraw
+    // test gas cost withdrawing from many epochs
 
     // test case1 (see the ipad sketch)
 

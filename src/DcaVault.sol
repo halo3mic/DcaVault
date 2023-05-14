@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import "forge-std/console2.sol";
 
 import { PositionUtils, Position } from "./lib/Position.sol";
 import { min } from "./lib/Math.sol";
@@ -13,23 +12,23 @@ import "./interface/IERC20.sol";
 contract DcaVault is IDcaVault {
     using PositionUtils for Position;
 
-    uint256 immutable INIT_TIME = block.timestamp;
-    uint256 immutable epochDuration;
-    address immutable makeAsset;
-    address immutable takeAsset;
-    address immutable priceFeed;
-    uint256 immutable makeAssetDenominator;
-    uint256 immutable takeAssetDenominator;
+    uint256 public immutable INIT_TIME = block.timestamp;
+    uint256 public immutable epochDuration;
+    address public immutable makeAsset;
+    address public immutable takeAsset;
+    address public immutable priceFeed;
+    uint256 public immutable makeAssetDenominator;
+    uint256 public immutable takeAssetDenominator;
 
     mapping(address => uint256) public userToPositions;
-    mapping(uint256 => uint256) epochToReccuringEnding; // How much will stop recurring from that epoch on
-    mapping(bytes32 => Position) idToPosition;
-    mapping(uint256 => EpochInfo) epochToInfo;
+    mapping(uint256 => uint256) public epochToReccuringEnding; // How much will stop recurring from that epoch on
+    mapping(bytes32 => Position) public idToPosition;
+    mapping(uint256 => EpochInfo) public epochToInfo;
     uint256 public recurringPending;
     uint256 public currentEpoch;
-    uint256 makeUnlockedBalance;
-    uint256 reccuringAmount; 
-    uint256 takeBalance;
+    uint256 public makeUnlockedBalance;
+    uint256 public reccuringAmount; 
+    uint256 public takeBalance;
 
     constructor(
         address _makeAsset, 
@@ -78,6 +77,8 @@ contract DcaVault is IDcaVault {
         uint256 totalDeposit = position.recurringAmount * position.epochs;
         uint256 swappedMake = _withdraw(position);
         uint256 unspentMake = totalDeposit - swappedMake;
+
+        uint makeBal = IERC20(makeAsset).balanceOf(address(this));
         if (unspentMake > 0)
             IERC20(makeAsset).transfer(msg.sender, unspentMake);
 
@@ -102,7 +103,7 @@ contract DcaVault is IDcaVault {
     }
 
     function updateEpoch() public {
-         uint256 _epochNow = epochNow();
+        uint256 _epochNow = epochNow();
         uint256 epochDiff = _epochNow - currentEpoch;
         if (epochDiff == 0)
             return;
@@ -125,25 +126,23 @@ contract DcaVault is IDcaVault {
 
     function query(uint256 takeAmount) public view returns (uint256) {
         uint256 makeAvailable = makeUnlockedBalance;
-        console2.log("makeAvailable: %d", makeAvailable);
         if (epochNow() > currentEpoch) {
-            console2.log("new epoch");
             uint256 reccuringEnding; 
             for (uint256 e = currentEpoch+1; e <= epochNow(); ++e) {
                 reccuringEnding += epochToReccuringEnding[e];
             }
-            console2.log("recurringPending: %d", recurringPending);
-            console2.log("reccuringEnding: %d", reccuringEnding);
             makeAvailable += recurringPending - reccuringEnding;
         }
-        console2.log("makeAvailable: %d", makeAvailable);
         uint256 makeAmount = _getMakeForTake(takeAmount);
-        console2.log("makeAmount: %d", makeAmount);
         return min(makeAmount, makeAvailable);
     }
 
     function getPositionForId(bytes32 positionId) external view returns (Position memory) {
         return idToPosition[positionId];
+    }
+
+    function getInfoForEpoch(uint256 epoch) external view returns (EpochInfo memory) {
+        return epochToInfo[epoch];
     }
 
     function getOraclePrice() public view returns (uint256) {
@@ -164,15 +163,13 @@ contract DcaVault is IDcaVault {
         makeUnlockedBalance -= makeAmount;
         takeBalance += takeAmount;
         epochToInfo[currentEpoch].takeInflow += takeAmount;
+        epochToInfo[currentEpoch].makeOutflow += makeAmount;
 
         IERC20(makeAsset).transfer(msg.sender, makeAmount);
         emit Swap(msg.sender, makeAmount, takeAmount);
     }
 
     function _getMakeForTake(uint256 takeAmount) internal view returns (uint256) {
-        console2.log("makeAssetDenominator: %d", makeAssetDenominator);
-        console2.log("takeAssetDenominator: %d", takeAssetDenominator);
-        console2.log("getOraclePrice(): %d", getOraclePrice());
         return takeAmount
             * getOraclePrice()
             * makeAssetDenominator
@@ -184,8 +181,8 @@ contract DcaVault is IDcaVault {
         (uint256 swappedMake, uint256 swappedTake) = _getSwappedAmounts(position);
         uint256 amountToWithdraw = swappedTake - position.withdrawn;
         takeBalance -= amountToWithdraw;
-
-        IERC20(makeAsset).transfer(msg.sender, amountToWithdraw);
+        if (amountToWithdraw > 0)
+            IERC20(takeAsset).transfer(msg.sender, amountToWithdraw);
         emit Withdraw(msg.sender, amountToWithdraw);
 
         return swappedMake;
@@ -194,17 +191,19 @@ contract DcaVault is IDcaVault {
     function _getSwappedAmounts(
         Position memory position
     ) internal view returns (uint256 swappedMake, uint256 swappedTake) {
-        for (uint256 e = position.epoch0; e < currentEpoch; ++e) {
+        for (uint256 e = position.epoch0; e <= currentEpoch; ++e) {
             if (position.isFilled(e, swappedMake))
                 break;
 
             EpochInfo memory epochInfo = epochToInfo[e];
             if (epochInfo.takeInflow == 0)
                 continue;
-
+            
             uint256 nonswappedUnlocked = position.unlocked(e) - swappedMake;
             uint256 epochSwappedTake = epochInfo.takeInflow * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in take asset for position
-            uint256 epochSwappedMakeFull = epochToInfo[e+1].intialUnlockedMakeBalance - epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in make asset
+            uint256 epochSwappedMakeFull = e == currentEpoch
+                ? epochInfo.intialUnlockedMakeBalance - makeUnlockedBalance
+                : epochInfo.makeOutflow;
             uint256 epochSwappedMake = epochSwappedMakeFull * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in make asset for position
             swappedTake += epochSwappedTake;
             swappedMake += epochSwappedMake;

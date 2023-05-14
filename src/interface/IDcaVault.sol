@@ -12,6 +12,7 @@ interface IDcaVault {
 
     struct EpochInfo {
         uint256 takeInflow;
+        uint256 makeOutflow;
         uint256 intialUnlockedMakeBalance;
     }
 
