@@ -224,7 +224,7 @@ contract DcaVaultTest is Test {
         DummyERC20(makeAsset).mint(address(tom), 100e6);
         DummyERC20(takeAsset).mint(address(taker), 14 ether);
         
-        // 💰 Alice & Bob both deposit 4000 dUSDC 2 epochs
+        // 💰 Alice & Bob both deposit 100 dUSDC 2 epochs
         uint256 depositAmount = 100e6;
         bytes32 alicePositionId = alice.deposit(address(vault), depositAmount, 2);
         bytes32 bobPositionId = bob.deposit(address(vault), depositAmount, 2);
@@ -235,7 +235,7 @@ contract DcaVaultTest is Test {
         // 💱 Taker swaps
         taker.swap(address(vault), 4 ether);
 
-        // 💰 Tom deposits 4000 dUSDC 1 epoch
+        // 💰 Tom deposits 100 dUSDC 1 epoch
         bytes32 tomPositionId = tom.deposit(address(vault), depositAmount, 1);
 
         // ⏱️ Warp to the next epoch
@@ -256,9 +256,9 @@ contract DcaVaultTest is Test {
         uint256 takeBalAlice = ERC20(takeAsset).balanceOf(address(alice));
         uint256 takeBalBob = ERC20(takeAsset).balanceOf(address(bob));
         uint256 takeBalTom = ERC20(takeAsset).balanceOf(address(tom));
-        assertEq(takeBalAlice, 4.5 ether, "Alice should have 100e6");
-        assertEq(takeBalBob, 4.5 ether, "Bob should have 100e6");
-        assertEq(takeBalTom, 5 ether, "Tom should have 100e6");
+        assertEq(takeBalAlice, 4.5 ether, "Alice should have 4.5 dETH");
+        assertEq(takeBalBob, 4.5 ether, "Bob should have 4.5 dETH");
+        assertEq(takeBalTom, 5 ether, "Tom should have 5 dETH");
 
     }
 
