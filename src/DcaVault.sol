@@ -81,7 +81,6 @@ contract DcaVault is IDcaVault {
         if (unspentMake > 0)
             IERC20(makeAsset).transfer(msg.sender, unspentMake);
 
-        // Rm from global counting
         uint256 unlockedMake = position.unlocked(currentEpoch) - swappedMake;
         makeSwappableBal -= unlockedMake;
         reccuringAmount -= unlockedMake;
@@ -107,7 +106,6 @@ contract DcaVault is IDcaVault {
         if (epochDiff == 0)
             return;
 
-        // reccuring investments ending in the following epoch
         uint256 reccuringEnding; 
         // it is possible no one presses the button for a long time, so we need to update the state for all the epochs
         for (uint256 e = currentEpoch+1; e <= _epochNow; ++e) {
@@ -145,7 +143,6 @@ contract DcaVault is IDcaVault {
     }
 
     function getOraclePrice() public view returns (uint256) {
-        // todo: figure out price precision
         return PriceFeed(priceFeed).getLatestPrice(makeAsset, takeAsset);
     }
 
@@ -157,7 +154,7 @@ contract DcaVault is IDcaVault {
         return (block.timestamp-INIT_TIME) / epochDuration;
     }
 
-    function _swap(uint256 takeAmount) internal { // todo: use quote and base to avoid confusion
+    function _swap(uint256 takeAmount) internal {
         require(PriceFeed(priceFeed).active(takeAsset, makeAsset), "Oracle not active");
         updateEpoch();
         uint256 makeAmount = _getMakeForTake(takeAmount);
@@ -203,11 +200,13 @@ contract DcaVault is IDcaVault {
                 continue;
             
             uint256 nonswappedUnlocked = position.unlocked(e) - swappedMake;
-            uint256 epochSwappedTake = epochInfo.takeInflow * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in take asset for position
+            // how much was swapped within epoch e in take asset for position
+            uint256 epochSwappedTake = epochInfo.takeInflow * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance;
             uint256 epochSwappedMakeFull = e == currentEpoch
                 ? epochInfo.intialUnlockedMakeBalance - makeSwappableBal
                 : epochInfo.makeOutflow;
-            uint256 epochSwappedMake = epochSwappedMakeFull * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in make asset for position
+            // how much was swapped within epoch e in make asset for position
+            uint256 epochSwappedMake = epochSwappedMakeFull * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance;
             swappedTake += epochSwappedTake;
             swappedMake += epochSwappedMake;
         }
