@@ -149,6 +149,10 @@ contract DcaVault is IDcaVault {
         // todo: figure out price precision
         return PriceFeed(priceFeed).getLatestPrice(makeAsset, takeAsset);
     }
+
+    function getSwappedAmounts(bytes32 positionId) external view returns (uint256, uint256) {
+        return _getSwappedAmounts(idToPosition[positionId]);
+    }
     
     function epochNow() public view returns (uint256) {
         return (block.timestamp-INIT_TIME) / epochDuration;
