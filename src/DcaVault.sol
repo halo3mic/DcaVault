@@ -78,7 +78,6 @@ contract DcaVault is IDcaVault {
         uint256 swappedMake = _withdraw(position);
         uint256 unspentMake = totalDeposit - swappedMake;
 
-        uint makeBal = IERC20(makeAsset).balanceOf(address(this));
         if (unspentMake > 0)
             IERC20(makeAsset).transfer(msg.sender, unspentMake);
 
