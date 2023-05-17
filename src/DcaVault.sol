@@ -26,7 +26,7 @@ contract DcaVault is IDcaVault {
     mapping(uint256 => EpochInfo) public epochToInfo;
     uint256 public recurringPending;
     uint256 public currentEpoch;
-    uint256 public makeUnlockedBalance;
+    uint256 public makeSwappableBal;
     uint256 public reccuringAmount; 
     uint256 public takeBalance;
 
@@ -83,7 +83,7 @@ contract DcaVault is IDcaVault {
 
         // Rm from global counting
         uint256 unlockedMake = position.unlocked(currentEpoch) - swappedMake;
-        makeUnlockedBalance -= unlockedMake;
+        makeSwappableBal -= unlockedMake;
         reccuringAmount -= unlockedMake;
         if (position.epoch0 == currentEpoch + 1)
             recurringPending -= position.recurringAmount;
@@ -116,15 +116,15 @@ contract DcaVault is IDcaVault {
         } 
         reccuringAmount += recurringPending - reccuringEnding;
         recurringPending = 0;
-        makeUnlockedBalance += reccuringAmount;
+        makeSwappableBal += reccuringAmount;
         currentEpoch = _epochNow;
-        epochToInfo[_epochNow].intialUnlockedMakeBalance = makeUnlockedBalance;
+        epochToInfo[_epochNow].intialUnlockedMakeBalance = makeSwappableBal;
 
         emit NewEpoch(_epochNow);
     }
 
     function query(uint256 takeAmount) public view returns (uint256) {
-        uint256 makeAvailable = makeUnlockedBalance;
+        uint256 makeAvailable = makeSwappableBal;
         if (epochNow() > currentEpoch) {
             uint256 reccuringEnding; 
             for (uint256 e = currentEpoch+1; e <= epochNow(); ++e) {
@@ -161,9 +161,9 @@ contract DcaVault is IDcaVault {
         require(PriceFeed(priceFeed).active(takeAsset, makeAsset), "Oracle not active");
         updateEpoch();
         uint256 makeAmount = _getMakeForTake(takeAmount);
-        require(makeAmount <= makeUnlockedBalance, "Insufficient unlocked funds");
+        require(makeAmount <= makeSwappableBal, "Insufficient swappable funds");
 
-        makeUnlockedBalance -= makeAmount;
+        makeSwappableBal -= makeAmount;
         takeBalance += takeAmount;
         epochToInfo[currentEpoch].takeInflow += takeAmount;
         epochToInfo[currentEpoch].makeOutflow += makeAmount;
@@ -205,7 +205,7 @@ contract DcaVault is IDcaVault {
             uint256 nonswappedUnlocked = position.unlocked(e) - swappedMake;
             uint256 epochSwappedTake = epochInfo.takeInflow * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in take asset for position
             uint256 epochSwappedMakeFull = e == currentEpoch
-                ? epochInfo.intialUnlockedMakeBalance - makeUnlockedBalance
+                ? epochInfo.intialUnlockedMakeBalance - makeSwappableBal
                 : epochInfo.makeOutflow;
             uint256 epochSwappedMake = epochSwappedMakeFull * nonswappedUnlocked / epochInfo.intialUnlockedMakeBalance; // how much was swapped within epoch e in make asset for position
             swappedTake += epochSwappedTake;
