@@ -179,7 +179,7 @@ contract DcaVaultTest is Test {
         // Check
         Position memory pos = vault.getPositionForId(positionId);
         assertEq(ERC20(takeAsset).balanceOf(address(vault)), swapAmount, "take balance is increased");
-        assertEq(vault.makeUnlockedBalance(), pos.recurringAmount-swapAmountOut, "makeUnlockedBalance is decreased");
+        assertEq(vault.makeSwappableBal(), pos.recurringAmount-swapAmountOut, "makeSwappableBal is decreased");
         assertEq(vault.getInfoForEpoch(vault.currentEpoch()).takeInflow, swapAmount);
 
         // User can close the position
@@ -198,7 +198,7 @@ contract DcaVaultTest is Test {
         assertEq(vault.getPositionForId(positionId).owner, address(0), "position is empty after closing");
     }
 
-    function testScenario() public {
+    function testScenarioA() public {
         // 🪄 Init
         address makeAsset = dUSDC;
         address takeAsset = dETH;
@@ -260,6 +260,104 @@ contract DcaVaultTest is Test {
         assertEq(takeBalBob, 4.5 ether, "Bob should have 4.5 dETH");
         assertEq(takeBalTom, 5 ether, "Tom should have 5 dETH");
 
+    }
+
+    function testScenarioB() public {
+        // 🪄 Init
+        address makeAsset = dUSDC;
+        address takeAsset = dETH;
+        uint epochDuration = 1 days;
+        DummyGmxPriceFeed priceFeed = new DummyGmxPriceFeed();
+        DcaVault vault = new DcaVault(
+            makeAsset,
+            takeAsset,
+            epochDuration,
+            address(priceFeed)
+        );
+
+        // 🙋‍♂️ Define users
+        Maker alice = new Maker("Alice");
+        Maker bob = new Maker("Bob");
+        Maker tom = new Maker("Tom");
+        Taker taker = new Taker("Taker");
+
+        // 🖨️ Mint tokens to users
+        DummyERC20(makeAsset).mint(address(alice), 90e6);
+        DummyERC20(makeAsset).mint(address(bob), 90e6);
+        DummyERC20(makeAsset).mint(address(tom), 90e6);
+        DummyERC20(takeAsset).mint(address(taker), 15 ether);
+        
+        // 💰 Alice & Bob both deposit 90 dUSDC for 2 and 1 epochs, respectively
+        uint256 depositAmount = 90e6;
+        bytes32 bobPositionId = bob.deposit(address(vault), depositAmount, 1);
+        bytes32 alicePositionId = alice.deposit(address(vault), depositAmount, 2);
+
+        // ⏱️ Warp to the next epoch
+        cheats.warp(block.timestamp + epochDuration + 1);
+        vault.updateEpoch();
+
+        // Check state
+        assertEq(vault.makeSwappableBal(), 135e6, "Total swappable is 135 dUSDC");
+        assertEq(vault.getPositionForId(bobPositionId).unlocked(vault.currentEpoch()), 90e6, "Bob's unlocked is 90 dUSDC");
+        assertEq(vault.getPositionForId(alicePositionId).unlocked(vault.currentEpoch()), 45e6, "Alice's unlocked is 45 dUSDC");
+
+        // 📈 Price changes
+        priceFeed.setPrice(30e30);
+
+        // 💱 Taker swaps
+        taker.swap(address(vault), 3 ether);
+
+        // Check state
+        (uint bobMakeSwapped, uint bobTakeSwapped) = vault.getSwappedAmounts(bobPositionId);
+        (uint aliceMakeSwapped, uint aliceTakeSwapped) = vault.getSwappedAmounts(alicePositionId);
+        assertEq(bobMakeSwapped, 60e6, "Bob should have swapped 60 dUSDC");
+        assertEq(bobTakeSwapped, 2 ether, "Bob should get 2 dETH");
+        assertEq(aliceMakeSwapped, 30e6, "Alice should have swapped 30 dUSDC");
+        assertEq(aliceTakeSwapped, 1 ether, "Alice should get 1 dETH");
+        assertEq(vault.makeSwappableBal(), 45e6, "Total swappable should be 45 dUSDC");
+
+        // 💰 Tom deposits 90 dUSDC for 1 epoch
+        bytes32 tomPositionId = tom.deposit(address(vault), depositAmount, 1);
+
+        // ⏱️ Warp to the next epoch
+        cheats.warp(block.timestamp + epochDuration+1);
+        vault.updateEpoch();
+
+        // Check state
+        assertEq(vault.makeSwappableBal(), 180e6, "Total swappable is 180 dUSDC");
+        assertEq(vault.getPositionForId(tomPositionId).unlocked(vault.currentEpoch()), 90e6, "Tom's unlocked is 100 dUSDC");
+        assertEq(vault.getPositionForId(alicePositionId).unlocked(vault.currentEpoch()), 90e6, "Alice's unlocked is 100 dUSDC");
+
+        // 📈 Price changes
+        priceFeed.setPrice(15e30);
+
+        // 💱 Taker swaps
+        taker.swap(address(vault), 12 ether);
+        
+        // Check state
+        (bobMakeSwapped, bobTakeSwapped) = vault.getSwappedAmounts(bobPositionId);
+        (aliceMakeSwapped, aliceTakeSwapped) = vault.getSwappedAmounts(alicePositionId);
+        (uint tomMakeSwapped, uint tomTakeSwapped) = vault.getSwappedAmounts(tomPositionId);
+        assertEq(bobMakeSwapped, 90e6, "Bob should have swapped 90 dUSDC"); // NOTE: 1 dUSDC dust
+        assertEq(bobTakeSwapped, 4 ether, "Bob should get 4 dETH");
+        assertEq(aliceMakeSwapped, 90e6, "Alice should have swapped 100 dUSDC"); // NOTE: 1 dUSDC dust
+        assertEq(aliceTakeSwapped, 5 ether, "Alice should get 5 dETH");
+        assertEq(tomMakeSwapped, 90e6, "Tom should have swapped 100 dUSDC");
+        assertEq(tomTakeSwapped, 6 ether, "Tom should get 6 dETH");
+        assertEq(vault.makeSwappableBal(), 0, "Total swappable should be 0 dUSDC");
+
+        // 🚪 All markers withdraw (and close their positions)
+        alice.withdraw(address(vault), alicePositionId);
+        bob.withdraw(address(vault), bobPositionId);
+        tom.withdraw(address(vault), tomPositionId);
+
+        // ✅ Check balances are distributed correctly
+        uint256 takeBalAlice = ERC20(takeAsset).balanceOf(address(alice));
+        uint256 takeBalBob = ERC20(takeAsset).balanceOf(address(bob));
+        uint256 takeBalTom = ERC20(takeAsset).balanceOf(address(tom));
+        assertEq(takeBalTom, 6 ether, "Tom should have 6 dETH");
+        assertEq(takeBalBob, 4 ether, "Bob should have 4 dETH");
+        assertEq(takeBalAlice, 5 ether, "Alice should have 5 dETH");
     }
 
 }
