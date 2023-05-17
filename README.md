@@ -30,4 +30,4 @@ forge test --match-test testScenarioB
 
 ## Contact
 
-Twitter: [@MihaLotric](https://twitter.com/MihaLotric)
+[Twitter](https://twitter.com/MihaLotric)
