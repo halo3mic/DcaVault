@@ -247,7 +247,7 @@ contract DcaVaultTest is Test {
         // 💱 Taker swaps 10 ether
         taker.swap(address(vault), 10 ether);
 
-        // 🚪 All markers withdraw (and close their positions)
+        // 🚪 All makers withdraw (and close their positions)
         alice.withdraw(address(vault), alicePositionId);
         bob.withdraw(address(vault), bobPositionId);
         tom.withdraw(address(vault), tomPositionId);
@@ -346,7 +346,7 @@ contract DcaVaultTest is Test {
         assertEq(tomTakeSwapped, 6 ether, "Tom should get 6 dETH");
         assertEq(vault.makeSwappableBal(), 0, "Total swappable should be 0 dUSDC");
 
-        // 🚪 All markers withdraw (and close their positions)
+        // 🚪 All makers withdraw (and close their positions)
         alice.withdraw(address(vault), alicePositionId);
         bob.withdraw(address(vault), bobPositionId);
         tom.withdraw(address(vault), tomPositionId);
